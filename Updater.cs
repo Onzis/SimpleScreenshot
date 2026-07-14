@@ -21,6 +21,8 @@ namespace Screenshoter
         {
             public Version Version { get; init; } = new(0, 0, 0);
             public string Tag { get; init; } = "";
+            public string Name { get; init; } = "";
+            public string Notes { get; init; } = "";
             public string DownloadUrl { get; init; } = "";
             public string HtmlUrl { get; init; } = "";
         }
@@ -48,14 +50,16 @@ namespace Screenshoter
 
                 string tag = root.GetProperty("tag_name").GetString() ?? "";
                 string html = root.TryGetProperty("html_url", out var h) ? h.GetString() ?? "" : "";
+                string name = root.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                string notes = root.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "";
 
                 string url = "";
                 if (root.TryGetProperty("assets", out var assets))
                 {
                     foreach (var a in assets.EnumerateArray())
                     {
-                        var name = a.GetProperty("name").GetString() ?? "";
-                        if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                        var assetName = a.GetProperty("name").GetString() ?? "";
+                        if (assetName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                         {
                             url = a.GetProperty("browser_download_url").GetString() ?? "";
                             break;
@@ -67,6 +71,8 @@ namespace Screenshoter
                 {
                     Version = ParseVersion(tag),
                     Tag = tag,
+                    Name = name,
+                    Notes = notes,
                     DownloadUrl = url,
                     HtmlUrl = html
                 };

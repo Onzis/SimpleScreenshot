@@ -153,17 +153,17 @@ public partial class App : WpfApp
             return;
         }
 
-        var answer = System.Windows.MessageBox.Show(
-            $"Доступна новая версия {release.Tag}\nТекущая: {Updater.CurrentVersion.ToString(3)}\n\nОбновить сейчас? Приложение перезапустится.",
-            "SnapFlow — обновление",
-            MessageBoxButton.YesNo, MessageBoxImage.Information);
-
-        if (answer != MessageBoxResult.Yes) return;
+        var win = new UpdateWindow(release);
+        var accepted = win.ShowDialog() == true && win.StartUpdate;
+        if (!accepted) return;
 
         try
         {
             _updating = true;
-            _tray?.ShowBalloonTip(3000, "SnapFlow", "Загрузка обновления…", ToolTipIcon.Info);
+            win = new UpdateWindow(release);
+            win.Show();
+            win.SetDownloading(null);
+
             var ok = await Updater.DownloadAndApplyAsync(release);
             if (ok)
             {
@@ -174,6 +174,7 @@ public partial class App : WpfApp
             else
             {
                 _updating = false;
+                win.Close();
                 _tray?.ShowBalloonTip(4000, "SnapFlow", "Не удалось применить обновление.", ToolTipIcon.Error);
             }
         }
