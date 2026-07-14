@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Forms;
 using WpfApp = System.Windows.Application;
@@ -22,6 +23,8 @@ public partial class App : WpfApp
         _cfg = AppSettings.Load();
         InitTray();
         RegisterHotkey();
+
+        _ = CheckForUpdatesAsync(silent: true);
     }
 
     private void InitTray()
@@ -38,6 +41,7 @@ public partial class App : WpfApp
         _captureItem = new ToolStripMenuItem(CaptureMenuText(), null, (_, __) => StartCapture());
         menu.Items.Add(_captureItem);
         menu.Items.Add("Настройки…", null, (_, __) => OpenSettings());
+        menu.Items.Add("Проверить обновления", null, (_, __) => _ = CheckForUpdatesAsync(silent: false));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Выход", null, (_, __) => ExitApp());
         foreach (ToolStripItem item in menu.Items)
@@ -114,6 +118,70 @@ public partial class App : WpfApp
         _overlay.Closed += (_, __) => _overlay = null;
         _overlay.Show();
         _overlay.Activate();
+    }
+
+    private bool _updating;
+
+    private async Task CheckForUpdatesAsync(bool silent)
+    {
+        if (_updating) return;
+
+        var release = await Updater.GetLatestAsync();
+        if (release == null)
+        {
+            if (!silent)
+                _tray?.ShowBalloonTip(4000, "SnapFlow",
+                    "Не удалось проверить обновления. Проверьте подключение к интернету.",
+                    ToolTipIcon.Warning);
+            return;
+        }
+
+        if (!Updater.IsNewer(release))
+        {
+            if (!silent)
+                _tray?.ShowBalloonTip(3000, "SnapFlow",
+                    $"У вас последняя версия ({Updater.CurrentVersion.ToString(3)}).",
+                    ToolTipIcon.Info);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(release.DownloadUrl))
+        {
+            _tray?.ShowBalloonTip(5000, "SnapFlow",
+                $"Доступна версия {release.Tag}, но файл для загрузки не найден. Откройте страницу релиза вручную.",
+                ToolTipIcon.Info);
+            return;
+        }
+
+        var answer = System.Windows.MessageBox.Show(
+            $"Доступна новая версия {release.Tag}\nТекущая: {Updater.CurrentVersion.ToString(3)}\n\nОбновить сейчас? Приложение перезапустится.",
+            "SnapFlow — обновление",
+            MessageBoxButton.YesNo, MessageBoxImage.Information);
+
+        if (answer != MessageBoxResult.Yes) return;
+
+        try
+        {
+            _updating = true;
+            _tray?.ShowBalloonTip(3000, "SnapFlow", "Загрузка обновления…", ToolTipIcon.Info);
+            var ok = await Updater.DownloadAndApplyAsync(release);
+            if (ok)
+            {
+                if (_tray != null) { _tray.Visible = false; _tray.Dispose(); }
+                _hotkey?.Dispose();
+                Shutdown();
+            }
+            else
+            {
+                _updating = false;
+                _tray?.ShowBalloonTip(4000, "SnapFlow", "Не удалось применить обновление.", ToolTipIcon.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            _updating = false;
+            _tray?.ShowBalloonTip(4000, "SnapFlow", "Ошибка обновления: " + ex.Message, ToolTipIcon.Error);
+        }
     }
 
     private void ExitApp()

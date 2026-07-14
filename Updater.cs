@@ -1,0 +1,148 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Reflection;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+namespace Screenshoter
+{
+    // Проверка новой версии и автообновление с GitHub Releases.
+    public static class Updater
+    {
+        private const string Owner = "Onzis";
+        private const string Repo = "SnapFlow";
+        private const string ApiUrl =
+            "https://api.github.com/repos/" + Owner + "/" + Repo + "/releases/latest";
+
+        public sealed class ReleaseInfo
+        {
+            public Version Version { get; init; } = new(0, 0, 0);
+            public string Tag { get; init; } = "";
+            public string DownloadUrl { get; init; } = "";
+            public string HtmlUrl { get; init; } = "";
+        }
+
+        public static Version CurrentVersion =>
+            Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
+
+        private static HttpClient CreateClient()
+        {
+            var c = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            c.DefaultRequestHeaders.UserAgent.ParseAdd("SnapFlow-Updater");
+            c.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+            return c;
+        }
+
+        // Запрос последнего релиза. null — если проверить не удалось.
+        public static async Task<ReleaseInfo?> GetLatestAsync()
+        {
+            try
+            {
+                using var client = CreateClient();
+                var json = await client.GetStringAsync(ApiUrl);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                string tag = root.GetProperty("tag_name").GetString() ?? "";
+                string html = root.TryGetProperty("html_url", out var h) ? h.GetString() ?? "" : "";
+
+                string url = "";
+                if (root.TryGetProperty("assets", out var assets))
+                {
+                    foreach (var a in assets.EnumerateArray())
+                    {
+                        var name = a.GetProperty("name").GetString() ?? "";
+                        if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                        {
+                            url = a.GetProperty("browser_download_url").GetString() ?? "";
+                            break;
+                        }
+                    }
+                }
+
+                return new ReleaseInfo
+                {
+                    Version = ParseVersion(tag),
+                    Tag = tag,
+                    DownloadUrl = url,
+                    HtmlUrl = html
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public static bool IsNewer(ReleaseInfo release) => release.Version > CurrentVersion;
+
+        // Скачивает новый exe и запускает замену с перезапуском приложения.
+        public static async Task<bool> DownloadAndApplyAsync(ReleaseInfo release)
+        {
+            if (string.IsNullOrEmpty(release.DownloadUrl)) return false;
+
+            string currentExe = Process.GetCurrentProcess().MainModule?.FileName
+                                ?? Environment.ProcessPath ?? "";
+            if (string.IsNullOrEmpty(currentExe)) return false;
+
+            string newExe = Path.Combine(Path.GetTempPath(),
+                $"SnapFlow_{release.Version}.exe");
+
+            using (var client = CreateClient())
+            using (var resp = await client.GetAsync(release.DownloadUrl,
+                       HttpCompletionOption.ResponseHeadersRead))
+            {
+                resp.EnsureSuccessStatusCode();
+                await using var fs = new FileStream(newExe, FileMode.Create, FileAccess.Write);
+                await resp.Content.CopyToAsync(fs);
+            }
+
+            WriteAndRunSwapScript(currentExe, newExe);
+            return true;
+        }
+
+        // Батник ждёт закрытия текущего процесса, подменяет exe и перезапускает.
+        private static void WriteAndRunSwapScript(string currentExe, string newExe)
+        {
+            int pid = Process.GetCurrentProcess().Id;
+            string bat = Path.Combine(Path.GetTempPath(), "snapflow_update.cmd");
+
+            string script =
+$@"@echo off
+:waitloop
+tasklist /FI ""PID eq {pid}"" 2>nul | find ""{pid}"" >nul
+if not errorlevel 1 (
+    timeout /t 1 /nobreak >nul
+    goto waitloop
+)
+move /y ""{newExe}"" ""{currentExe}"" >nul
+start """" ""{currentExe}""
+del ""%~f0""
+";
+            File.WriteAllText(bat, script);
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c \"{bat}\"",
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+            Process.Start(psi);
+        }
+
+        private static Version ParseVersion(string tag)
+        {
+            var digits = new string(tag.Where(c => char.IsDigit(c) || c == '.').ToArray());
+            var parts = digits.Split('.', StringSplitOptions.RemoveEmptyEntries);
+            int Major = parts.Length > 0 && int.TryParse(parts[0], out var a) ? a : 0;
+            int Minor = parts.Length > 1 && int.TryParse(parts[1], out var b) ? b : 0;
+            int Build = parts.Length > 2 && int.TryParse(parts[2], out var c) ? c : 0;
+            return new Version(Major, Minor, Build);
+        }
+    }
+}
