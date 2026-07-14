@@ -40,8 +40,23 @@ public partial class App : WpfApp
         };
         _captureItem = new ToolStripMenuItem(CaptureMenuText(), null, (_, __) => StartCapture());
         menu.Items.Add(_captureItem);
-        menu.Items.Add("Настройки…", null, (_, __) => OpenSettings());
+        menu.Items.Add(new ToolStripSeparator());
+
+        var autostartItem = new ToolStripMenuItem("Запускать при старте Windows")
+        {
+            CheckOnClick = true,
+            Checked = Autostart.IsEnabled()
+        };
+        autostartItem.ShortcutKeyDisplayString = autostartItem.Checked ? "✓" : "";
+        autostartItem.CheckedChanged += (_, __) =>
+        {
+            Autostart.SetEnabled(autostartItem.Checked);
+            autostartItem.ShortcutKeyDisplayString = autostartItem.Checked ? "✓" : "";
+        };
+        menu.Items.Add(autostartItem);
+
         menu.Items.Add("Проверить обновления", null, (_, __) => _ = CheckForUpdatesAsync(silent: false));
+        menu.Items.Add("Настройки…", null, (_, __) => OpenSettings());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Выход", null, (_, __) => ExitApp());
         foreach (ToolStripItem item in menu.Items)
