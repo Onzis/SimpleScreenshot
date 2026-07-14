@@ -79,6 +79,11 @@
                    HorizontalAlignment="Left" VerticalAlignment="Top"
                    Visibility="Collapsed" IsHitTestVisible="False"/>
 
+        <!-- Вспышка при захвате -->
+        <Rectangle x:Name="FlashRect" Fill="White" RadiusX="2" RadiusY="2"
+                   HorizontalAlignment="Left" VerticalAlignment="Top"
+                   Opacity="0" Visibility="Collapsed" IsHitTestVisible="False"/>
+
         <!-- Слой интерактива: маркеры + панель -->
         <Canvas x:Name="OverlayCanvas">
             <!-- 8 маркеров ресайза -->
@@ -94,7 +99,10 @@
             <!-- Премиальная панель инструментов -->
             <Border x:Name="Toolbar" Height="32" CornerRadius="6" Padding="4,0"
                     Background="#1C1C1E" Opacity="0" Visibility="Collapsed"
-                    VerticalAlignment="Center">
+                    VerticalAlignment="Center" RenderTransformOrigin="1,0.5">
+                <Border.RenderTransform>
+                    <ScaleTransform x:Name="ToolbarScale" ScaleX="1" ScaleY="1"/>
+                </Border.RenderTransform>
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.4" Color="Black"/>
                 </Border.Effect>

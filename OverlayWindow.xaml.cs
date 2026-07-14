@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 
@@ -36,6 +37,10 @@ namespace Screenshoter
             {
                 FullRectGeo.Rect = new Rect(0, 0, ActualWidth, ActualHeight);
                 HookThumbs();
+
+                // плавное появление затемнения
+                DimPath.BeginAnimation(OpacityProperty,
+                    new DoubleAnimation(0, 0.4, TimeSpan.FromSeconds(0.18)));
             };
 
             MouseLeftButtonDown += OnMouseDown;
@@ -172,8 +177,16 @@ namespace Screenshoter
         {
             if (_chromeShown) { Toolbar.Opacity = 0.85; return; }
             _chromeShown = true;
+
             Toolbar.BeginAnimation(OpacityProperty,
-                new DoubleAnimation(0.85, TimeSpan.FromSeconds(0.12)));
+                new DoubleAnimation(0.85, TimeSpan.FromSeconds(0.14)));
+
+            var pop = new DoubleAnimation(0.85, 1.0, TimeSpan.FromSeconds(0.2))
+            {
+                EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.5 }
+            };
+            ToolbarScale.BeginAnimation(ScaleTransform.ScaleXProperty, pop);
+            ToolbarScale.BeginAnimation(ScaleTransform.ScaleYProperty, pop);
         }
 
         private void HideThumbsAndToolbar()
@@ -232,6 +245,7 @@ namespace Screenshoter
         {
             var rect = _selection;
             HideChrome();
+            await PlayCaptureFlashAsync(rect);
             await FadeOutAsync();
             var crop = ScreenshotHelper.Crop(_fullShot, rect, ActualWidth, ActualHeight);
             await ScreenshotHelper.CopyToClipboardAsync(crop);
@@ -243,6 +257,7 @@ namespace Screenshoter
             var rect = _selection;
             var crop = ScreenshotHelper.Crop(_fullShot, rect, ActualWidth, ActualHeight);
             HideChrome();
+            await PlayCaptureFlashAsync(rect);
             await FadeOutAsync();
             await ScreenshotHelper.SaveAsync(crop);
             Close();
@@ -252,6 +267,26 @@ namespace Screenshoter
         {
             await FadeOutAsync();
             Close();
+        }
+
+        // Вспышка по области выделения — эффект «снимка».
+        private System.Threading.Tasks.Task PlayCaptureFlashAsync(Rect area)
+        {
+            var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+
+            FlashRect.Width = area.Width;
+            FlashRect.Height = area.Height;
+            FlashRect.Margin = new Thickness(area.X, area.Y, 0, 0);
+            FlashRect.Visibility = Visibility.Visible;
+
+            var flash = new DoubleAnimationUsingKeyFrames();
+            flash.KeyFrames.Add(new LinearDoubleKeyFrame(0.0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+            flash.KeyFrames.Add(new LinearDoubleKeyFrame(0.9, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(0.05))));
+            flash.KeyFrames.Add(new LinearDoubleKeyFrame(0.0, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(0.28))));
+            flash.Completed += (_, __) => tcs.SetResult(true);
+
+            FlashRect.BeginAnimation(OpacityProperty, flash);
+            return tcs.Task;
         }
 
         private System.Threading.Tasks.Task FadeOutAsync()
