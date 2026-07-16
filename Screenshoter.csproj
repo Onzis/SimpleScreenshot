@@ -25,4 +25,8 @@
     <Resource Include="app.ico" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ApplicationDefinition Include="Views\App.xaml" />
+  </ItemGroup>
+
 </Project>
